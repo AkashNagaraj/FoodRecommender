@@ -1,7 +1,9 @@
-from nltk.corpus import stopwords
+from nltk.corpus import words, stopwords
 import pandas as pd
+import numpy as np
 import re
 from tqdm import tqdm
+tqdm.pandas()
 from multiprocessing.pool import ThreadPool as Pool
 import nltk
 from nltk.tokenize import word_tokenize
@@ -10,6 +12,8 @@ from bs4 import BeautifulSoup
 import requests
 import sys
 import os
+import nltk
+#nltk.download('words')
 
 os.environ["MOZ_HEADLESS"] = "1"
 
@@ -77,52 +81,85 @@ def read_data():
     return df
 
 
-def user_data():
-    """
-    Get user data
-    """
-
-
-def save_data(df):
-    print("Saving prices data")
-    path = "data/food_prices.xlsx"
+def save_data(df, path):
     with pd.ExcelWriter(path, engine="openpyxl",mode='a',if_sheet_exists='replace') as writer:
         df.to_excel(writer, sheet_name="Sheet1", index=False)
     print("Data saved")
 
 
-def clean_recipe(recipes):
-    return recipes
+def remove_non_english(text):
+    english_words = set(words.words())
+    tokens = word_tokenize(text)
+    english_tokens = [word for word in tokens if word in english_words]
+    return " ".join(english_tokens)
 
-
-def main():
-    app_aim = ["healthy_meals", "fitness", "illness"]
-    user_data()
+def make_dataset():
     df = read_data()
     pool = Pool(2)
+    sample_size = 2
     
-    df["RecipeName"] = clean_recipe(df["RecipeName"])
-    print(df.head())
-    sys.exit()
-
+    df["RecipeName"] = df["RecipeName"].iloc[:sample_size].apply(lambda x: re.sub(r'[^\w\s]','',x.lower())).progress_apply(remove_non_english)
+    
+    print(df["URL"][:5])
     #1) Obtain prices of ingredients
-    quantity , product_name, prices = [],[],[]
+    diet, quantity , product_name, prices, recipe = [], [], [], [], []
     # Iterate over all dishes
-    ingredients = [(df["TranslatedIngredients"].iloc[idx]) for idx in df["TranslatedIngredients"].index[:2]]
+    ingredients = [(df["TranslatedIngredients"].iloc[idx]) for idx in df["TranslatedIngredients"].index[:sample_size]]
     result = pool.map(get_prices, ingredients)
-    for extracted_data in result:
+    for idx,extracted_data in enumerate(result):
         quantity += extracted_data[0]
         product_name += extracted_data[1] 
         prices += extracted_data[2]
+        recipe += [df["RecipeName"][idx]]*len(product_name)
+        diet += [df["Diet"]]*len(product_name)
     
     all_prices_df = pd.DataFrame({"quantity(gm)":quantity, "product name":product_name, "prices":prices})
+    recipes_and_ingredients = pd.DataFrame({"Recipe":recipe,"Product Name":recipe,"Diet":diet})
+    
     print("Size of the dataframe: ",all_prices_df.shape) 
-    save_data(all_prices_df) 
+    
+    prices_path = "data/food_prices.xlsx"
+    recipe_path = "data/food_recipes.xlsx"
+    save_data(all_prices_df, prices_path)
+    save_data(recipes_and_ingredients, recipe_path)
 
-    # 2) Obtain Illness with the food they should avoid
-    # 3) Given requirements identify specific ingredients -> recipes
-    # 4) Get calories
-    # 5) Perform Analysis
+
+def food_nutrients():
+    nutrients_path = "data/nutrients/nutrition.csv"
+    df = pd.read_csv(nutrients_path,index_col=0)
+    #print("Columns with NaN:",df.isnull().any())
+    df.drop(columns="saturated_fat",inplace=True)
+    df["name"] = df["name"].apply(lambda x: x.lower())
+
+    name = []
+    english_words = set(words.words())
+    for text in tqdm(df["name"].tolist()):
+        english_tokens = []
+        for word in word_tokenize(text): 
+            if word in english_words:
+                english_tokens.append(word)    
+        if len(english_tokens)==0:
+            name.append(np.nan)
+        else:
+            name.append(" ".join(english_tokens))
+    df["name"] = name 
+    df.dropna(inplace=True) 
+    
+    df.to_csv("data/clean_nutrients.csv")
+    print("Saved Data")
+
+
+def main():
+    # 1) Dataset with recipes, ingredients, quantity and their prices
+    # make_dataset()
+    # 2) Dataset with food nutrients
+    # food_nutrients()
+    # 3) Get a user input
+    # Extract relevant content using MedPaLM(Medical LLM)
+    # Use our database for RAG
+    # 4) Output
+    # Available recipes, cost of recipes
+    # 5) Monitor data statistics
     
 
 if __name__=="__main__":
