@@ -14,6 +14,7 @@ import sys
 import os
 import nltk
 #nltk.download('words')
+nltk.download('punkt')
 
 os.environ["MOZ_HEADLESS"] = "1"
 
@@ -151,9 +152,9 @@ def food_nutrients():
 
 def main():
     # 1) Dataset with recipes, ingredients, quantity and their prices
-    # make_dataset()
+    #make_dataset()
     # 2) Dataset with food nutrients
-    # food_nutrients()
+    #food_nutrients()
     # 3) Get a user input
     # Extract relevant content using MedPaLM(Medical LLM)
     # Use our database for RAG
